@@ -7,6 +7,9 @@ import random
 from app.services.email_service import send_verification_email
 from app.db import users_col, sessions_col
 from app.db.prompt import default_system_prompt, default_user_prompt
+from app.core.config import settings
+
+DEFAULT_MODEL = settings.DEFAULT_MODEL
 
 verification_codes = {}
 
@@ -69,7 +72,8 @@ class AuthManager:
             "email": email,
             "verified": True,
             "openai_api_key": "",
-            "preferred_model": "local",
+            "preferred_model": DEFAULT_MODEL,
+            "use_batch_api": False,
             "audio_language": "auto",
             "audio_model_level": 2,
         }
@@ -95,7 +99,8 @@ class AuthManager:
             "email": "",
             "verified": False,
             "openai_api_key": "",
-            "preferred_model": "local",
+            "preferred_model": DEFAULT_MODEL,
+            "use_batch_api": False,
             "audio_language": "auto",
             "audio_model_level": 2,
         }
@@ -145,12 +150,14 @@ class AuthManager:
         custom_prompt=None,
         custom_user_prompt=None,
         profile_url=None,
+        use_batch_api=False,
     ):
         update_data = {
             "openai_api_key": api_key,
             "preferred_model": model_choice,
             "audio_language": audio_lang,
             "audio_model_level": int(audio_model),
+            "use_batch_api": bool(use_batch_api),
         }
 
         if custom_prompt is not None:
@@ -166,6 +173,53 @@ class AuthManager:
         return result.matched_count > 0
 
     @staticmethod
+    def reset_prompts_to_default(known_defaults=()):
+        """
+        모든 사용자의 custom_prompt / custom_user_prompt 를 제거하여 현재 기본 프롬프트
+        (app/db/prompt.py)를 사용하도록 한다. 필드를 지워 두면 이후 기본값이 바뀔 때도
+        자동으로 따라간다.
+
+        known_defaults: 과거 기본 프롬프트 문자열 목록. 저장된 값이 이 목록(또는 현재 기본값)과
+        일치하면 그대로 제거하고, 사용자가 직접 수정한 프롬프트라면 custom_prompt_prev /
+        custom_user_prompt_prev 에 백업한 뒤 제거한다.
+        반환값: {"reset": [...], "backed_up": [...], "untouched": [...]}
+        """
+        import re
+
+        def norm(text):
+            return re.sub(r"[\s*`]+", "", text or "")
+
+        defaults = {norm(default_system_prompt), norm(default_user_prompt)}
+        defaults.update(norm(d) for d in known_defaults)
+
+        report = {"reset": [], "backed_up": [], "untouched": []}
+        for user in users_col.find(
+            {}, {"username": 1, "custom_prompt": 1, "custom_user_prompt": 1}
+        ):
+            unset, backup = {}, {}
+            for field in ("custom_prompt", "custom_user_prompt"):
+                if field not in user:
+                    continue
+                value = user[field]
+                unset[field] = ""
+                if value and value.strip() and norm(value) not in defaults:
+                    backup[f"{field}_prev"] = value
+
+            if not unset:
+                report["untouched"].append(user["username"])
+                continue
+
+            update = {"$unset": unset}
+            if backup:
+                update["$set"] = backup
+            users_col.update_one({"_id": user["_id"]}, update)
+            (report["backed_up"] if backup else report["reset"]).append(
+                user["username"]
+            )
+
+        return report
+
+    @staticmethod
     def update_preferred_model(username, model_choice):
         result = users_col.update_one(
             {"username": username}, {"$set": {"preferred_model": model_choice}}
@@ -179,7 +233,8 @@ class AuthManager:
         if user:
             return {
                 "openai_api_key": user.get("openai_api_key", ""),
-                "preferred_model": user.get("preferred_model", "local"),
+                "preferred_model": user.get("preferred_model", DEFAULT_MODEL),
+                "use_batch_api": bool(user.get("use_batch_api", False)),
                 "audio_language": user.get("audio_language", "auto"),
                 "audio_model_level": user.get("audio_model_level", 2),
                 "custom_prompt": user.get("custom_prompt", default_system_prompt),
@@ -191,7 +246,8 @@ class AuthManager:
 
         return {
             "openai_api_key": "",
-            "preferred_model": "local",
+            "preferred_model": DEFAULT_MODEL,
+            "use_batch_api": False,
             "audio_language": "auto",
             "audio_model_level": 2,
             "custom_prompt": default_system_prompt,

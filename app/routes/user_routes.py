@@ -23,9 +23,11 @@ async def save_settings(
     audio_model: str = Form("2"),
     custom_prompt: Optional[str] = Form(None),
     custom_user_prompt: Optional[str] = Form(None),
+    use_batch: str = Form("0"),
     profile_img: Optional[UploadFile] = File(None),
     user: Any = Depends(get_current_user),
 ):
+    use_batch_api = use_batch.strip().lower() in ("1", "true", "on", "yes")
     try:
         int_audio_model = int(audio_model)
     except:
@@ -52,6 +54,7 @@ async def save_settings(
         custom_prompt,
         custom_user_prompt,
         profile_url,
+        use_batch_api,
     )
 
     if success:

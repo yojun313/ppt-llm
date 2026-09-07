@@ -193,9 +193,10 @@
                                 <div>
                                     <label class="block text-sm font-bold text-white/70 mb-2">PPT/PDF 분석 모델</label>
                                     <select name="model" id="modelSelect" class="w-full p-3 rounded-xl glass-input outline-none transition cursor-pointer">
+                                        <option class="bg-[#0f1424]" value="gpt-5.6-luna">OpenAI - GPT-5.6 Luna (기본 / $0.20·$1.20 per 1M)</option>
+                                        <option class="bg-[#0f1424]" value="gpt-5.6-terra">OpenAI - GPT-5.6 Terra ($2.00·$12.00 per 1M)</option>
+                                        <option class="bg-[#0f1424]" value="gpt-5.6-sol">OpenAI - GPT-5.6 Sol ($4.00·$20.00 per 1M)</option>
                                         <option class="bg-[#0f1424]" value="local">Local Server (무료/대기열 있음)</option>
-                                        <option class="bg-[#0f1424]" value="gpt-5.2">OpenAI - GPT-5.2 (High-Perf)</option>
-                                        <option class="bg-[#0f1424]" value="gpt-5-mini">OpenAI - GPT-5-mini (Cheap)</option>
                                     </select>
                                 </div>
 
@@ -208,6 +209,17 @@
                                     </div>
                                     <input type="password" name="api_key" id="apiKeyInput" placeholder="sk-..."
                                            class="w-full p-3 rounded-xl glass-input outline-none transition font-mono text-sm">
+
+                                    <label class="flex items-start space-x-3 mt-4 cursor-pointer select-none">
+                                        <input type="checkbox" name="use_batch" id="useBatchCheckbox" value="1"
+                                               class="mt-1 w-4 h-4 rounded accent-blue-500 cursor-pointer">
+                                        <span class="text-sm">
+                                            <span class="font-bold text-white/80">Batch API 사용 (토큰 요금 50% 할인)</span>
+                                            <span class="block text-xs text-white/40 mt-1">
+                                                슬라이드 분석을 OpenAI 배치 대기열로 보냅니다. 비용이 절반이지만 결과까지 수 분~최대 24시간이 걸릴 수 있습니다. 진행률은 대시보드에 그대로 표시됩니다.
+                                            </span>
+                                        </span>
+                                    </label>
                                 </div>
                             </div>
 
@@ -359,11 +371,13 @@
         // 설정 로드 및 저장
         const currentModel = "{{ settings.preferred_model }}";
         const currentKey = "{{ settings.openai_api_key }}";
+        const currentUseBatch = {{ 'true' if settings.use_batch_api else 'false' }};
         const currentPrompt = {{ settings.custom_prompt | tojson | safe }};
         const currentUserPrompt = {{ settings.custom_user_prompt | tojson | safe }};
 
-        document.getElementById('modelSelect').value = currentModel || 'local';
+        document.getElementById('modelSelect').value = currentModel || 'gpt-5.6-luna';
         document.getElementById('apiKeyInput').value = currentKey || '';
+        document.getElementById('useBatchCheckbox').checked = currentUseBatch;
         document.getElementById('customPrompt').value = currentPrompt;
         document.getElementById('customUserPrompt').value = currentUserPrompt;
 
@@ -408,27 +422,11 @@
 
         const PROMPT_TEMPLATES = {
             system: {
-                default: `당신은 전공 강의 자료를 분석하고 요약하는 전문 AI 조교입니다.
-
-[출력 규칙]
-1. 반드시 Markdown 형식으로 작성할 것.
-2. 한국어를 사용하여 자연스럽게 설명할 것.
-3. 서론(인사말 등) 없이 본론(분석 내용)만 바로 작성할 것.
-4. 슬라이드의 내용을 정확하고 자세하게 설명할 것.
-5. 전공 내용과 관련 없는 요소(슬라이드 디자인, 로고, 텍스트 색상 등)는 설명에서 제외할 것.
-6. 영어로 된 슬라이드 문장은 문맥에 맞게 한국어로 번역하여 설명할 것.
-7. 수식 및 기호 표기 규칙 준수 (매우 중요):
-    * 모든 수학 공식, 변수명(예: $x$, $n$, $L$), 연산 기호는 반드시 LaTeX 문법을 사용하여 작성할 것.
-    * 문장 중간에 들어가는 수식은 $ ... $ (인라인 수식)을 사용할 것.
-    * 독립된 줄에 표현되는 긴 수식은 $$...$$ (블록 수식)을 사용할 것.
-    * 절대 수식을 인라인 코드(백틱 \`)나 코드 블록으로 감싸지 말 것.
-    * 아래첨자(_)나 위첨자(^) 사용 시, 대상이 명확하도록 중괄호{}를 적극적으로 사용할 것 (예: $x_{L}$, $2^{n/2}$).`,
+                default: {{ default_system_prompt | tojson | safe }},
                 researcher: `당신은 논문 분석 전문 연구원입니다. 제시된 논문의 페이지를 분석하여, 해당 페이지에 기술된 논문 내용을 상세히 설명하십시오. 특히 복잡한 알고리즘이나 수식은 수식의 각 항이 의미하는 바를 구체적으로 풀어서 설명해야 합니다. 연구의 맥락을 유지하면서 해당 페이지의 정보를 누락 없이 전달하는 것이 핵심입니다. 모든 수식은 반드시 LaTeX 문법($ ... $)을 사용하십시오.`
             },
             user: {
-                default: `파일명: "{filename}"
-이모티콘을 절대 쓰지 않고 이 페이지에 대해 자세히 설명하세요.
-제목은 "## {filename}" 형식을 사용하세요.`,
+                default: {{ default_user_prompt | tojson | safe }},
                 summary: `파일명: "{filename}"
 이 페이지의 핵심 요약(Abstract)을 작성하고, 본문에 등장하는 핵심 개념들을 $ ... $ 기호를 사용한 수식과 함께 설명하세요.`,
                 paper_detail: `파일명: "{filename}"

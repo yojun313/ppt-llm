@@ -3,6 +3,7 @@ from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.services.auth_manager import AuthManager
+from app.db.prompt import default_system_prompt, default_user_prompt
 import os
 
 router = APIRouter()
@@ -44,7 +45,14 @@ async def settings_page(request: Request):
     user_settings = AuthManager.get_user_settings(user)
 
     return templates.TemplateResponse(
-        request, "settings.html", {"username": user, "settings": user_settings}
+        request,
+        "settings.html",
+        {
+            "username": user,
+            "settings": user_settings,
+            "default_system_prompt": default_system_prompt,
+            "default_user_prompt": default_user_prompt,
+        },
     )
 
 

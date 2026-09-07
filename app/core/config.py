@@ -22,6 +22,9 @@ class Settings:
 
     BASE_URL = "http://localhost:8000"
 
+    # 신규 사용자 / 설정 누락 시 기본 분석 모델 (OpenAI 공식 문서 기준, 2026-09 확인)
+    DEFAULT_MODEL = "gpt-5.6-luna"
+
     MAIL_SENDER = os.getenv("MAIL_SENDER", "")
 
 
